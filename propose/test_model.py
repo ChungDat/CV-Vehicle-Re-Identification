@@ -197,10 +197,11 @@ def main():
             
     print(f"Number of retrieval misses (no match in top 10): {len(retrieval_miss_indices)}")
     
-    n_show = min(10, len(retrieval_miss_indices))
+    n_show = min(5, len(retrieval_miss_indices))
     
     if n_show > 0:
         fig, ax = plt.subplots(n_show, n_top + 1, figsize=(20, 4 * n_show))
+        fig.suptitle(f"Number of retrieval misses (no match in top 10): {len(retrieval_miss_indices)}", fontsize=16)
         if n_show == 1:
             ax = [ax]
             
