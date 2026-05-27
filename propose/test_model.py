@@ -167,7 +167,7 @@ def main():
             
     plt.tight_layout()
     
-    vis1_path = os.path.join(test_result_dir, "random_retrieval_samples.png")
+    vis1_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_random_retrieval_samples.png")
     os.makedirs(os.path.dirname(vis1_path), exist_ok=True)
     plt.savefig(vis1_path)
     plt.close()
@@ -224,7 +224,7 @@ def main():
                 ax[row][j + 1].set_yticks([])
                 
         plt.tight_layout()
-        misses_path = os.path.join(test_result_dir, "retrieval_misses.png")
+        misses_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_retrieval_misses.png")
         plt.savefig(misses_path)
         plt.close()
         print(f"Saved retrieval misses to {misses_path}")
