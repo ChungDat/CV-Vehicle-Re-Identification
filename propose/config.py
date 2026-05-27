@@ -114,9 +114,9 @@ def get_config():
     cfg.training.batch_size = 32
     cfg.training.num_instances = 4 # K instances per ID for Triplet Loss, e.g. batch size = 32, num_instances = 4 means 8 IDs per batch
 
-    cfg.training.save_every = 10 # Save checkpoint every 10 epochs
-    cfg.training.eval_every = 10 # Evaluate every 10 epochs
-    cfg.training.print_every = 10 # Print training info every 10 steps (not epochs)
+    cfg.training.save_every = 10 # Save checkpoint every x epochs
+    cfg.training.eval_every = 10 # Evaluate every x epochs
+    cfg.training.print_every = 200 # Print training info every x steps (not epochs)
 
     cfg.training.patience = 10 # for early stopping
     cfg.training.min_delta = 0.001 # for early stopping
