@@ -9,20 +9,12 @@ from torch.utils.data import DataLoader
 from config import get_config
 from load_dataset import VeRiDataset, VRICDataset, ValTransform
 from model import Baseline, BaselineWithBOT, BaselineWithCBAM, BOTWithCBAM
-from utils import extract_features, compute_similarity, evaluate_rank
-
-def get_image_paths(dataset):
-    """
-    Constructs the image paths directly from the dataset's samples list.
-    """
-    paths = []
-    for _, _, _, img_path in dataset.samples:
-        paths.append(img_path)
-    return paths
+from utils import extract_features, compute_similarity, evaluate_rank, get_image_paths
 
 def main():
     parser = argparse.ArgumentParser(description="Test and visualize the best model")
     parser.add_argument('--dataset-name', type=str, default=None, help='Dataset name [VeRi776, VRIC]')
+    parser.add_argument('--model-type', type=str, default=None, help='Model type [baseline, baseline_with_BOT, baseline_with_CBAM, BOT_with_CBAM]')
     parser.add_argument('--model-path', type=str, default=None, help='Path to the model weights')
     args = parser.parse_args()
 
@@ -31,6 +23,9 @@ def main():
     
     if args.dataset_name is not None:
         cfg.dataset.name = args.dataset_name
+    
+    if args.model_type is not None:
+        cfg.model.type = args.model_type
         
     dataset_cfg = cfg.dataset.vric if cfg.dataset.name == 'VRIC' else cfg.dataset.veri
     
@@ -96,13 +91,21 @@ def main():
     model_state_dict = model.state_dict()
     for k in list(state_dict.keys()): # remove classifier weights because of mismatch num_classes (e.g. trained on VeRi776 with 776 classes, but test on VRIC with 2811 classes)
         if k in model_state_dict and state_dict[k].shape != model_state_dict[k].shape:
-            print(f"Skipping weight {k} due to shape mismatch (saved: {state_dict[k].shape}, current: {model_state_dict[k].shape})")
+            # print(f"Skipping weight {k} due to shape mismatch (saved: {state_dict[k].shape}, current: {model_state_dict[k].shape})")
             del state_dict[k]
             
-    model.load_state_dict(state_dict, strict=False)
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    
+    missing_keys = [k for k in missing_keys if 'classifier' not in k]
+    unexpected_keys = [k for k in unexpected_keys if 'classifier' not in k]
+    
+    if len(missing_keys) > 0 or len(unexpected_keys) > 0:
+        print(f"Error: Model checkpoint does not match the model type '{cfg.model.type}'!")
+        print("Please ensure the --model-type matches the architecture of the saved checkpoint.")
+        return
+        
     model.eval()
 
-    # Extraction
     print("Extracting gallery features...")
     gallery_features, gallery_v_ids, gallery_c_ids = extract_features(model, gallery_loader, device)
     
@@ -130,6 +133,24 @@ def main():
         elif metric.startswith('Rank-'):
             rank = int(metric.split('-')[1])
             print(f"Rank-{rank}: {cmc[rank-1]:.4f}")
+    
+    # ======
+    # Plot CMC Curve
+    # ======
+    plt.figure(figsize=(10, 6))
+    ranks = np.arange(1, len(cmc) + 1)
+    plt.plot(ranks, cmc, linestyle='-', color='b', linewidth=2)
+    plt.title(f'CMC Curve - {cfg.dataset.name} (mAP: {mAP:.4f})')
+    plt.xlabel('Rank')
+    plt.ylabel('Matching Rate')
+    plt.grid(True)
+    plt.xlim(1, len(cmc))
+    plt.ylim(0, 1.05)
+    
+    cmc_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_cmc_curve.png")
+    plt.savefig(cmc_path)
+    plt.close()
+    print(f"Saved CMC curve to {cmc_path}")
     
     # ======
     # Test 1: Random samples
@@ -196,6 +217,16 @@ def main():
             retrieval_miss_indices.append(i)
             
     print(f"Number of retrieval misses (no match in top 10): {len(retrieval_miss_indices)}")
+    
+    misses_txt_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_retrieval_misses.txt")
+    with open(misses_txt_path, 'w') as f:
+        f.write("img_name,v_id,c_id\n")
+        for idx in retrieval_miss_indices:
+            img_name = os.path.basename(query_img_paths[idx])
+            v_id = query_v_ids[idx]
+            c_id = query_c_ids[idx]
+            f.write(f"{img_name},{v_id},{c_id}\n")
+    print(f"Dumped misses to {misses_txt_path}")
     
     n_show = min(5, len(retrieval_miss_indices))
     

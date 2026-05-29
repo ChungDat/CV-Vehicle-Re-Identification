@@ -174,7 +174,6 @@ def extract_features(model, dataloader, device):
             v_ids = batch['v_id']
             c_ids = batch['c_id']
 
-            # Forward
             embedding = model(images)
 
             # L2 normalization
@@ -271,3 +270,12 @@ def save_history(history, cfg):
             plt.close()
         except ImportError:
             pass
+
+def get_image_paths(dataset):
+    """
+    Constructs the image paths directly from the dataset's samples list.
+    """
+    paths = []
+    for _, _, _, img_path in dataset.samples:
+        paths.append(img_path)
+    return paths
