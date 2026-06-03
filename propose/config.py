@@ -41,6 +41,7 @@ def get_config():
     cfg.dataset = ConfigDict()
 
     cfg.dataset.name = "VeRi776" # [VeRi776, VRIC]
+    cfg.dataset.image_size = (256, 256)
 
     # VeRi776 dataset
     cfg.dataset.veri = ConfigDict()
@@ -61,8 +62,6 @@ def get_config():
     cfg.dataset.vric.gallery_list = os.path.join(cfg.dataset.vric.root, "vric_gallery.txt")
     cfg.dataset.vric.num_classes = 2811
 
-    cfg.dataset.image_size = (256, 256)
-
     # ======
     # Data Augmentation
     # ======
@@ -79,6 +78,9 @@ def get_config():
     # Loss
     # ======
     cfg.loss = ConfigDict()
+
+    cfg.loss.distance_mode = 'cosine' # [cosine, euclid]
+    
     cfg.loss.metric_loss = 'triplet' # [triplet, circle, center]
     cfg.loss.metric_margin = 0.3
 
@@ -135,7 +137,6 @@ def get_config():
     # Plot
     # ======
     cfg.plot = ConfigDict()
-    cfg.plot.save_fig = True
     cfg.plot.save_dir = os.path.join(cfg.save_dir, "plots")
     cfg.plot.fig_name = "metrics.png"
 

@@ -53,12 +53,14 @@ class Baseline(nn.Module):
         print(f"--- Model Summary: {self.__class__.__name__} ---")
         try:
             from torchinfo import summary
-            print(summary(self, input_size=input_size))
+            print(summary(self, input_size=input_size, device=device))
         except ImportError:
             print("torchinfo is not installed. Please run 'pip install torchinfo' for architecture summary.")
             
         try:
             from thop import profile
+            device = next(self.parameters()).device
+            dummy_input = dummy_input.to(device)
             flops, params = profile(self, inputs=(dummy_input,), verbose=False)
             print(f"FLOPs: {flops / 1e9:.2f} G, Parameters: {params / 1e6:.2f} M")
         except ImportError:
@@ -119,7 +121,7 @@ class BaselineWithBOT(nn.Module):
 
         #     backbone = resnet18(weights=weights)
 
-        # Bag of Tricks: modify stride of last layer to 1
+        # Bag of Tricks: change stride of last layer to 1
         backbone.layer4[0].conv2.stride = (1, 1)
         backbone.layer4[0].downsample[0].stride = (1, 1)
 
@@ -147,12 +149,14 @@ class BaselineWithBOT(nn.Module):
         print(f"--- Model Summary: {self.__class__.__name__} ---")
         try:
             from torchinfo import summary
-            print(summary(self, input_size=input_size))
+            print(summary(self, input_size=input_size, device=device))
         except ImportError:
             print("torchinfo is not installed. Please run 'pip install torchinfo' for architecture summary.")
             
         try:
             from thop import profile
+            device = next(self.parameters()).device
+            dummy_input = dummy_input.to(device)
             flops, params = profile(self, inputs=(dummy_input,), verbose=False)
             print(f"FLOPs: {flops / 1e9:.2f} G, Parameters: {params / 1e6:.2f} M")
         except ImportError:

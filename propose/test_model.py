@@ -11,6 +11,53 @@ from load_dataset import VeRiDataset, VRICDataset, ValTransform
 from model import Baseline, BaselineWithBOT, BaselineWithCBAM, BOTWithCBAM
 from utils import extract_features, compute_similarity, evaluate_rank, get_image_paths
 
+def plot_similarity_distribution(similarity_matrix, query_v_ids, gallery_v_ids, query_c_ids, gallery_c_ids, save_path):
+    q_v = np.array(query_v_ids)
+    g_v = np.array(gallery_v_ids)
+    q_c = np.array(query_c_ids)
+    g_c = np.array(gallery_c_ids)
+    
+    same_id_mask = q_v[:, None] == g_v[None, :]
+    same_cam_mask = q_c[:, None] == g_c[None, :]
+    
+    intra_class_mask = same_id_mask & (~same_cam_mask)
+    inter_class_mask = ~same_id_mask
+    
+    if isinstance(similarity_matrix, torch.Tensor):
+        similarity_matrix = similarity_matrix.cpu()
+    else:
+        similarity_matrix = torch.tensor(similarity_matrix)
+        
+    intra_sims = similarity_matrix[torch.from_numpy(intra_class_mask)]
+    inter_sims = similarity_matrix[torch.from_numpy(inter_class_mask)]
+    
+    import seaborn as sns
+    
+    plt.figure(figsize=(10, 6))
+    
+    intra_sims_np = intra_sims.numpy()
+    inter_sims_np = inter_sims.numpy()
+    
+    # Subsample if too large for seaborn KDE calculation
+    if len(intra_sims_np) > 50000:
+        intra_sims_np = np.random.choice(intra_sims_np, 50000, replace=False)
+    if len(inter_sims_np) > 50000:
+        inter_sims_np = np.random.choice(inter_sims_np, 50000, replace=False)
+        
+    sns.kdeplot(intra_sims_np, fill=True, color='blue', label='Intra-class', alpha=0.4, warn_singular=False)
+    sns.kdeplot(inter_sims_np, fill=True, color='red', label='Inter-class', alpha=0.4, warn_singular=False)
+    
+    plt.title('Cosine Similarity Distribution (Intra-class vs Inter-class)')
+    plt.xlabel('Cosine Similarity')
+    plt.ylabel('Density')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.xlim(0.0, 1.0)
+    
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Saved similarity distribution plot to {save_path}")
+
 def main():
     parser = argparse.ArgumentParser(description="Test and visualize the best model")
     parser.add_argument('--dataset-name', type=str, default=None, help='Dataset name [VeRi776, VRIC]')
@@ -127,12 +174,24 @@ def main():
         gallery_c_ids
     )
     print(f"Test Results:")
+    
+    metrics_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_metrics.txt")
+    with open(metrics_path, 'w') as f:
+        f.write(f"mAP: {mAP:.4f}\n")
+        f.write(f"Rank-1: {cmc[0]:.4f}\n")
+        if len(cmc) >= 5:
+            f.write(f"Rank-5: {cmc[4]:.4f}\n")
+        if len(cmc) >= 10:
+            f.write(f"Rank-10: {cmc[9]:.4f}\n")
+            
     for metric in cfg.eval.metrics:
         if metric == 'mAP':
             print(f"mAP: {mAP:.4f}")
         elif metric.startswith('Rank-'):
             rank = int(metric.split('-')[1])
             print(f"Rank-{rank}: {cmc[rank-1]:.4f}")
+            
+    print(f"Saved metrics to {metrics_path}")
     
     # ======
     # Plot CMC Curve
@@ -153,6 +212,30 @@ def main():
     print(f"Saved CMC curve to {cmc_path}")
     
     # ======
+    # Plot Similarity Distribution
+    # ======
+    print("Plotting similarity distribution...")
+    dist_path = os.path.join(test_result_dir, f"{cfg.dataset.name}_similarity_distribution.png")
+    plot_similarity_distribution(
+        similarity_matrix, 
+        query_v_ids, 
+        gallery_v_ids, 
+        query_c_ids, 
+        gallery_c_ids, 
+        dist_path
+    )
+    
+    # Mask out same-id and same-camera for visualization
+    q_v_ids_np = np.array(query_v_ids)
+    g_v_ids_np = np.array(gallery_v_ids)
+    q_c_ids_np = np.array(query_c_ids)
+    g_c_ids_np = np.array(gallery_c_ids)
+    
+    mask = (q_v_ids_np[:, None] == g_v_ids_np[None, :]) & (q_c_ids_np[:, None] == g_c_ids_np[None, :])
+    similarity_matrix_vis = similarity_matrix.clone()
+    similarity_matrix_vis[torch.from_numpy(mask)] = -float('inf')
+
+    # ======
     # Test 1: Random samples
     # ======
     n_samples = 3
@@ -162,24 +245,26 @@ def main():
     fig, ax = plt.subplots(n_samples, n_top + 1, figsize=(20, 4 * n_samples))
     
     for i, q_idx in enumerate(random_indices):
-        sim_score = similarity_matrix[q_idx]
+        sim_score = similarity_matrix_vis[q_idx]
         
         top_sim_score, top_index = torch.sort(sim_score, descending=True)
         top_sim_score = top_sim_score[:n_top]
         top_index = top_index[:n_top]
         
         retrieval_v_ids = [gallery_v_ids[idx] for idx in top_index]
+        retrieval_c_ids = [gallery_c_ids[idx] for idx in top_index]
         retrieval_img_paths = [gallery_img_paths[idx] for idx in top_index]
         q_v_id = query_v_ids[q_idx]
+        q_c_id = query_c_ids[q_idx]
         
         ax[i][0].imshow(plt.imread(query_img_paths[q_idx]))
-        ax[i][0].set_title(f"Query ID: {q_v_id}")
+        ax[i][0].set_title(f"Query ID: {q_v_id}\nCam: {q_c_id}")
         ax[i][0].axis("off")
         
         for j in range(n_top):
             color = "green" if q_v_id == retrieval_v_ids[j] else "red"
             ax[i][j + 1].imshow(plt.imread(retrieval_img_paths[j]))
-            ax[i][j + 1].set_title(f"Rank {j + 1}\nScore: {top_sim_score[j]:.3f}\nID: {retrieval_v_ids[j]}", color=color)
+            ax[i][j + 1].set_title(f"Rank {j + 1}\nScore: {top_sim_score[j]:.3f}\nID: {retrieval_v_ids[j]}\nCam: {retrieval_c_ids[j]}", color=color)
             for spine in ax[i][j + 1].spines.values():
                 spine.set_edgecolor(color)
                 spine.set_linewidth(4)
@@ -195,26 +280,34 @@ def main():
     print(f"Saved random retrieval samples to {vis1_path}")
     
     # ======
-    # Test 2: Hard samples (misses)
-    # Samples that have at least one non-match in top n_top 
+    # Test 2: Hard samples
+    # Plot samples that have at least one non-match in top n_top,
+    # but count the total number of absolute misses (no match in top n_top).
     # ======
-    top_sim_score_all, top_index_all = torch.topk(similarity_matrix, k=n_top, dim=1)
+    top_sim_score_all, top_index_all = torch.topk(similarity_matrix_vis, k=n_top, dim=1)
     
     retrieval_miss_indices = []
+    hard_sample_indices = []
     
     for i in range(len(query_v_ids)):
         q_id = query_v_ids[i]
-        success = True
+        has_match = False
+        has_non_match = False
         
         for j in range(n_top):
             g_idx = top_index_all[i, j].item()
             g_id = gallery_v_ids[g_idx]
             
-            if q_id != g_id:
-                success = False
+            if q_id == g_id:
+                has_match = True
+            else:
+                has_non_match = True
                 
-        if not success:
+        if not has_match:
             retrieval_miss_indices.append(i)
+            
+        if has_non_match:
+            hard_sample_indices.append(i)
             
     print(f"Number of retrieval misses (no match in top 10): {len(retrieval_miss_indices)}")
     
@@ -226,9 +319,9 @@ def main():
             v_id = query_v_ids[idx]
             c_id = query_c_ids[idx]
             f.write(f"{img_name},{v_id},{c_id}\n")
-    print(f"Dumped misses to {misses_txt_path}")
+    print(f"Saved misses to {misses_txt_path}")
     
-    n_show = min(5, len(retrieval_miss_indices))
+    n_show = min(5, len(hard_sample_indices))
     
     if n_show > 0:
         fig, ax = plt.subplots(n_show, n_top + 1, figsize=(20, 4 * n_show))
@@ -236,18 +329,19 @@ def main():
         if n_show == 1:
             ax = [ax]
             
-        for row, q_idx in enumerate(retrieval_miss_indices[:n_show]):
+        for row, q_idx in enumerate(hard_sample_indices[:n_show]):
             ax[row][0].imshow(plt.imread(query_img_paths[q_idx]))
-            ax[row][0].set_title(f"Query\nID: {query_v_ids[q_idx]}")
+            ax[row][0].set_title(f"Query\nID: {query_v_ids[q_idx]}\nCam: {query_c_ids[q_idx]}")
             ax[row][0].axis("off")
             
             for j in range(n_top):
                 g_idx = top_index_all[q_idx, j].item()
                 g_id = gallery_v_ids[g_idx]
+                g_c_id = gallery_c_ids[g_idx]
                 color = "green" if g_id == query_v_ids[q_idx] else "red"
                 
                 ax[row][j + 1].imshow(plt.imread(gallery_img_paths[g_idx]))
-                ax[row][j + 1].set_title(f"Rank {j+1}\nID: {g_id}\n{top_sim_score_all[q_idx, j]:.3f}", color=color)
+                ax[row][j + 1].set_title(f"Rank {j+1}\nID: {g_id}\nCam: {g_c_id}\n{top_sim_score_all[q_idx, j]:.3f}", color=color)
                 for spine in ax[row][j + 1].spines.values():
                     spine.set_edgecolor(color)
                     spine.set_linewidth(4)

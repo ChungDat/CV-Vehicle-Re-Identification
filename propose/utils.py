@@ -23,42 +23,6 @@ class EarlyStopper:
                 return True
         return False
 
-class TripletLoss(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-
-        self.margin = cfg.loss.metric_margin
-
-    def forward(self, features, labels):
-        n = features.size(0)
-
-        # L2 normalize
-        features = nn.functional.normalize(features, p=2, dim=1)
-
-        similarity_matrix = compute_similarity(features, features)
-
-        # Cosine Distance
-        dist_matrix = 1 - similarity_matrix
-
-        labels = labels.unsqueeze(1)
-
-        mask_pos = (labels == labels.t())
-        mask_pos.fill_diagonal_(False)
-        mask_neg = (labels != labels.t())
-
-        # Hardest positive
-        dist_ap = dist_matrix.masked_fill(~mask_pos, -1.0).max(dim=1)[0]
-
-        # Hardest negative
-        dist_an = dist_matrix.masked_fill(~mask_neg, float('inf')).min(dim=1)[0]
-
-        # loss = max(0, dp - dn + m)
-        loss = torch.relu(
-            dist_ap - dist_an + self.margin
-        )
-
-        return loss.mean()
-
 def compute_similarity(query_features, gallery_features):
     similarity_matrix = torch.matmul(query_features, gallery_features.T)
     return similarity_matrix
@@ -234,42 +198,41 @@ def save_history(history, cfg):
     with open(history_path, 'w') as f:
         json.dump(safe_history, f, indent=4)
         
-    if getattr(cfg.plot, 'save_fig', False):
-        try:
-            import matplotlib.pyplot as plt
+    try:
+        import matplotlib.pyplot as plt
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Plot loss
+        if len(history['epochs']) > 0 and len(history['train_loss']) > 0:
+            ax1.plot(history['epochs'], history['train_loss'], label='Train Loss')
+            ax1.set_xlabel('Epochs')
+            ax1.set_ylabel('Loss')
+            ax1.set_title('Training Loss')
+            ax1.legend()
+            ax1.grid(True)
+        
+        # Plot metrics
+        if len(history['eval_epochs']) > 0:
+            markers = ['o', 'x', '^', '*']
+            for i, metric in enumerate(cfg.eval.metrics):
+                if metric in history and len(history[metric]) > 0:
+                    marker = markers[i % len(markers)]
+                    ax2.plot(history['eval_epochs'], history[metric], label=metric, marker=marker)
+            ax2.set_xlabel('Epochs')
+            ax2.set_ylabel('Score')
+            ax2.set_title('Evaluation Metrics')
+            ax2.legend()
+            ax2.grid(True)
             
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-            
-            # Plot loss
-            if len(history['epochs']) > 0 and len(history['train_loss']) > 0:
-                ax1.plot(history['epochs'], history['train_loss'], label='Train Loss')
-                ax1.set_xlabel('Epochs')
-                ax1.set_ylabel('Loss')
-                ax1.set_title('Training Loss')
-                ax1.legend()
-                ax1.grid(True)
-            
-            # Plot metrics
-            if len(history['eval_epochs']) > 0:
-                markers = ['o', 'x', '^', '*']
-                for i, metric in enumerate(cfg.eval.metrics):
-                    if metric in history and len(history[metric]) > 0:
-                        marker = markers[i % len(markers)]
-                        ax2.plot(history['eval_epochs'], history[metric], label=metric, marker=marker)
-                ax2.set_xlabel('Epochs')
-                ax2.set_ylabel('Score')
-                ax2.set_title('Evaluation Metrics')
-                ax2.legend()
-                ax2.grid(True)
-                
-            plt.tight_layout()
-            
-            fig_name = getattr(cfg.plot, 'fig_name', 'metrics.png')
-            fig_path = os.path.join(cfg.save_dir, fig_name)
-            plt.savefig(fig_path)
-            plt.close()
-        except ImportError:
-            pass
+        plt.tight_layout()
+        
+        fig_name = getattr(cfg.plot, 'fig_name', 'metrics.png')
+        fig_path = os.path.join(cfg.save_dir, fig_name)
+        plt.savefig(fig_path)
+        plt.close()
+    except ImportError:
+        pass
 
 def get_image_paths(dataset):
     """

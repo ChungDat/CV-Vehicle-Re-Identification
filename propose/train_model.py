@@ -16,11 +16,24 @@ from sampler import RandomIdentitySampler
 from model import Baseline, BaselineWithBOT, BaselineWithCBAM, BOTWithCBAM
 from train_one_epoch import train_one_epoch
 from utils import *
+from loss import TripletLoss, CircleLoss, CenterLoss
 
 class ReIDLoss(nn.Module):
     def __init__(self, cfg, label_encoder, device):
         super().__init__()
-        self.triplet_loss = TripletLoss(cfg)
+        metric_loss_type = getattr(cfg.loss, 'metric_loss', 'triplet')
+        distance_mode = getattr(cfg.loss, 'distance_mode', 'cosine')
+        
+        if metric_loss_type == 'triplet':
+            self.metric_loss = TripletLoss(cfg, distance_mode=distance_mode)
+        elif metric_loss_type == 'circle':
+            self.metric_loss = CircleLoss(cfg, distance_mode=distance_mode)
+        elif metric_loss_type == 'center':
+            self.metric_loss = CenterLoss(cfg, distance_mode=distance_mode)
+        else:
+            print(f"Warning: Metric loss {metric_loss_type} not implemented yet, using triplet loss")
+            self.metric_loss = TripletLoss(cfg, distance_mode=distance_mode)
+            
         self.ce_loss = nn.CrossEntropyLoss(label_smoothing=0.1 if getattr(cfg.loss, 'label_smoothing', False) else 0.0)
         self.cls_weight = getattr(cfg.loss, 'cls_weight', 1.0)
         self.metric_weight = getattr(cfg.loss, 'metric_weight', 1.0)
@@ -40,9 +53,9 @@ class ReIDLoss(nn.Module):
             
             if 'metric_feat' in preds:
                 metric_feat = preds['metric_feat']
-                t_loss = self.triplet_loss(metric_feat, int_labels)
-                total_loss = self.metric_weight * t_loss + self.cls_weight * c_loss
-                return total_loss, t_loss, c_loss
+                m_loss = self.metric_loss(metric_feat, int_labels)
+                total_loss = self.metric_weight * m_loss + self.cls_weight * c_loss
+                return total_loss, m_loss, c_loss
             else:
                 total_loss = self.cls_weight * c_loss
                 return total_loss, c_loss
@@ -58,6 +71,7 @@ def parse_args():
     parser.add_argument('--dataset-name', type=str, default=None, help='Dataset name [VeRi776, VRIC]')
     parser.add_argument('--model-type', type=str, default=None, help='Model type [baseline, baseline_with_BOT, baseline_with_CBAM, BOT_with_CBAM]')
     parser.add_argument('--metric-loss', type=str, default=None, help='Metric loss [triplet, circle]')
+    parser.add_argument('--distance-mode', type=str, default=None, help='Distance mode [cosine, euclid]')
     parser.add_argument('--total-epochs', type=int, default=None, help='Total training epochs')
     parser.add_argument('--batch-size', type=int, default=None, help='Batch size')
     parser.add_argument('--num-instances', type=int, default=None, help='Number of instances per identity in a batch')
@@ -86,6 +100,8 @@ def main():
         cfg.logging.save_dir = os.path.join(cfg.save_dir, "logs")
     if args.metric_loss is not None:
         cfg.loss.metric_loss = args.metric_loss
+    if args.distance_mode is not None:
+        cfg.loss.distance_mode = args.distance_mode
     if args.total_epochs is not None:
         cfg.training.total_epochs = args.total_epochs
     if args.batch_size is not None:
