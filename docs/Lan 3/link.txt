@@ -1,0 +1,3 @@
+VeRi776: https://www.kaggle.com/datasets/abhyudaya12/veri-vehicle-re-identification-dataset
+VRIC: https://qmul-vric.github.io/
+Checkpoint: https://drive.google.com/drive/folders/1H0bFWvNINiSciRjCS239_WXoWHAyW9cT?usp=sharing

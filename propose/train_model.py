@@ -1,5 +1,3 @@
-from load_dataset import RandomTransform
-from load_dataset import ValTransform
 import os
 import argparse
 import torch
@@ -16,55 +14,7 @@ from sampler import RandomIdentitySampler
 from model import Baseline, BaselineWithBOT, BaselineWithCBAM, BOTWithCBAM
 from train_one_epoch import train_one_epoch
 from utils import *
-from loss import TripletLoss, CircleLoss, CenterLoss
-
-class ReIDLoss(nn.Module):
-    def __init__(self, cfg, label_encoder, device):
-        super().__init__()
-        metric_loss_type = getattr(cfg.loss, 'metric_loss', 'triplet')
-        distance_mode = getattr(cfg.loss, 'distance_mode', 'cosine')
-        
-        if metric_loss_type == 'triplet':
-            self.metric_loss = TripletLoss(cfg, distance_mode=distance_mode)
-        elif metric_loss_type == 'circle':
-            self.metric_loss = CircleLoss(cfg, distance_mode=distance_mode)
-        elif metric_loss_type == 'center':
-            self.metric_loss = CenterLoss(cfg, distance_mode=distance_mode)
-        else:
-            print(f"Warning: Metric loss {metric_loss_type} not implemented yet, using triplet loss")
-            self.metric_loss = TripletLoss(cfg, distance_mode=distance_mode)
-            
-        self.ce_loss = nn.CrossEntropyLoss(label_smoothing=0.1 if getattr(cfg.loss, 'label_smoothing', False) else 0.0)
-        self.cls_weight = getattr(cfg.loss, 'cls_weight', 1.0)
-        self.metric_weight = getattr(cfg.loss, 'metric_weight', 1.0)
-        self.label_encoder = label_encoder
-        self.device = device
-
-    def forward(self, preds, labels):
-        # convert string labels to ints
-        if isinstance(labels, torch.Tensor):
-            int_labels = labels
-        else:
-            int_labels = torch.tensor([self.label_encoder[vid] for vid in labels], dtype=torch.long, device=self.device)
-            
-        if isinstance(preds, dict):
-            logits = preds['logits']
-            c_loss = self.ce_loss(logits, int_labels)
-            
-            if 'metric_feat' in preds:
-                metric_feat = preds['metric_feat']
-                m_loss = self.metric_loss(metric_feat, int_labels)
-                total_loss = self.metric_weight * m_loss + self.cls_weight * c_loss
-                return total_loss, m_loss, c_loss
-            else:
-                total_loss = self.cls_weight * c_loss
-                return total_loss, c_loss
-        else:
-            # If preds is just a tensor (logits)
-            logits = preds
-            c_loss = self.ce_loss(logits, int_labels)
-            total_loss = self.cls_weight * c_loss
-            return total_loss, c_loss
+from loss import TripletLoss, CircleLoss, CenterLoss, ReIDLoss
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train ReID model")
